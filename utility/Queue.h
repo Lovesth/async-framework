@@ -22,7 +22,7 @@ namespace async_framework::util
             }
             cond_.notify_one();
         }
-        bool try_push(const T &&elem)
+        bool try_push(const T &elem)
         {
             {
                 std::unique_lock lock(mutex_, std::try_to_lock);

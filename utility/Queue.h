@@ -1,3 +1,6 @@
+/* A simple thread pool implementation
+*/
+
 #ifndef ASYNC_FRAMEWORK_QUEUE_H
 #define ASYNC_FRAMEWORK_QUEUE_H
 

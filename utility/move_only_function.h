@@ -178,6 +178,20 @@ namespace async_framework::util
                 functor._m_access<Functor *> = new Functor(f);
             }
         };
+
+        _function_base() : _m_manager(nullptr) {}
+        ~_function_base()
+        {
+            if (_m_manager)
+            {
+                _m_manager(_m_functor, _m_functor, _manager_operation::_destroy_functor);
+            }
+        }
+        bool _m_empty() const { return !_m_manager; }
+
+        using manger_type = void (*)(_any_data &, const _any_data &, _manager_operation);
+        _any_data _m_functor;
+        manger_type _m_manager;
     };
 }
 

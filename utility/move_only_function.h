@@ -272,10 +272,142 @@ namespace async_framework::util
         move_only_function(std::nullptr_t) noexcept : _function_base() {}
 
         // delete 拷贝构造函数
-        move_only_function(const move_only_function&) = delete;
+        move_only_function(const move_only_function &) = delete;
 
-        
+        move_only_function(move_only_function &&other) noexcept : _function_base()
+        {
+            other.swap(*this);
+        }
+
+        template <typename Functor,
+                  typename = Requires<std::negation<std::is_same<std::remove_reference_t<Functor>, move_only_function>>, void>,
+                  typename = Requires<std::negation<IsCStyleFunction<Functor>>, void>,
+                  typename = Requires<NotMoveOnlyCallable<Functor>, void>>
+        move_only_function(Functor &&f) : _function_base()
+        {
+            using MyHandler = detail::FunctionHandler<RetType(ArgTypes...), std::remove_reference_t<Functor>>;
+            if (MyHandler::_m_not_empty_function(f))
+            {
+                MyHandler::m_init_function(_m_functor, std::forward<Functor>(f));
+                _m_invoker = &MyHandler::m_invoke;
+                _m_manager = &MyHandler::_m_manager;
+            }
+        }
+
+        // fix error: invalid application of 'sizeof' to a function type
+        // [-Werror=pointer-arith]
+        template <typename Res, typename... Args>
+        move_only_function(Res (&f)(Args...)) : _function_base()
+        {
+            using MyHandler = detail::FunctionHandler<RetType(ArgTypes...), Res (*)(Args...)>;
+            if (MyHandler::_m_not_empty_function(&f))
+            {
+                MyHandler::_m_init_functor(_m_functor, &f);
+                _m_invoker = &MyHandler::_m_invoke;
+                _m_manager = &MyHandler::_m_manager;
+            }
+        }
+
+        move_only_function &operator=(const move_only_function &) = delete;
+        move_only_function &operator=(move_only_function &&other)
+        {
+            move_only_function(std::move(other)).swap(*this);
+            return *this;
+        }
+
+        move_only_function &operator=(std::nullptr_t) noexcept
+        {
+            if (_m_manager)
+            {
+                _m_manager(_m_functor, _m_functor, detail::_manager_operation::_destroy_functor);
+                _m_manager = nullptr;
+                _m_invoker = nullptr;
+            }
+            return *this;
+        }
+
+        template <typename Functor>
+        Requires<NotMoveOnlyCallable<typename std::decay<Functor>::type>, move_only_function &>
+        operator=(Functor &&f)
+        {
+            move_only_function(std::forward<Functor>(f)).swap(*this);
+            return *this;
+        }
+
+        void swap(move_only_function &other) noexcept
+        {
+            std::swap(_m_functor, other._m_functor);
+            std::swap(_m_manager, other._m_manager);
+            std::swap(_m_invoker, other._m_invoker);
+        }
+
+        // _m_manager
+        explicit operator bool() const noexcept
+        {
+            return !_m_empty();
+        }
+
+        RetType operator()(ArgTypes... _args) const
+        {
+            if (_m_empty())
+            {
+                throw std::bad_function_call();
+            }
+            return _m_invoker(_m_functor, std::forward<ArgTypes>(_args)...);
+        }
+
+    private:
+        using InvokerType = RetType (*)(const detail::_any_data &, ArgTypes &&...);
+        InvokerType _m_invoker;
     };
-}
+
+    namespace detail
+    {
+        template <typename>
+        struct _move_only_function_guide_helper
+        {
+        };
+
+        template <typename Res, typename T, typename... Args>
+        struct _move_only_function_guide_helper<Res (T::*)(Args...)>
+        {
+            using type = Res(Args...);
+        };
+
+        template <typename Res, typename T, typename... Args>
+        struct _move_only_function_guide_helper<Res (T::*)(Args...) &>
+        {
+            using type = Res(Args...);
+        };
+
+        template <typename Res, typename T, typename... Args>
+        struct _move_only_function_guide_helper<Res (T::*)(Args...) const>
+        {
+            using type = Res(Args...);
+        };
+
+        template <typename Res, typename T, typename... Args>
+        struct _move_only_function_guide_helper<Res (T::*)(Args...) const &>
+        {
+            using type = Res(Args...);
+        };
+    } // namespace detail
+
+    template <typename Functor, typename Signature = typename detail::_move_only_function_guide_helper<decltype(&Functor::operator())>::type>
+    move_only_function(Functor) -> move_only_function<Signature>;
+
+    template <typename Res, typename... Args>
+    inline void swap(move_only_function<Res(Args...)> &_x, move_only_function<Res(Args...)> &_y) noexcept
+    {
+        _x.swap(_y);
+    }
+
+    template <typename Res, typename... Args>
+    inline bool operator==(const move_only_function<Res(Args...)> &f, std::nullptr_t) noexcept
+    {
+        return !static_assert<bool>(f);
+    }
+
+} // namespace async_framework::util
 
 #endif

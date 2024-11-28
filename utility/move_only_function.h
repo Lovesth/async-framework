@@ -43,11 +43,12 @@ namespace async_framework::util
             static std::false_type _S_test(...);
 
         public:
+            // 用于判断RetType是否和ResultType::type一样
             using type = decltype(_S_test<RetType>(1));
         };
 
         class _undefined_class;
-        // _no_copy_types 提供了可以容纳以下指针的满足size和alignment
+        // _no_copy_types 提供了可以容纳以下指针指向的、满足size和alignment
         // requirement要求的内存区域
         union _no_copy_types
         {
@@ -58,6 +59,7 @@ namespace async_framework::util
         };
 
         // union也是一种类类型
+        // _any_data至少是8Bytes(64位)，4Bytes(32位)，为了实现对齐，有可能会更大。
         union [[gnu::may_alias]] _any_data
         {
             void *_m_access() { return &_m_pod_data[0]; }
@@ -141,6 +143,7 @@ namespace async_framework::util
                     _m_init_functor(_functor, f, _local_storage());
                 }
 
+                // 实现非空函数判断：1、move_only_function, 2、函数指针，3、其它类型。
                 template <typename Signature>
                 static bool _m_not_empty_function(const move_only_function<Signature> &f)
                 {
@@ -167,7 +170,8 @@ namespace async_framework::util
                     ::new (functor._m_access()) Functor(f);
                 }
                 // 在堆上构造
-
+                // _any_data为一个指针的大小，如果f不大于一个指针大小，存储在栈上
+                // 否则_any_data存储指向f的指针
                 static void _m_init_functor(_any_data &functor, Functor &&f, std::false_type)
                 {
                     functor._m_access<Functor *>() = new Functor(std::move(f));

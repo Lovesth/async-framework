@@ -1,5 +1,4 @@
-#ifndef ASYNC_FRAMEWORK_MOVEWRAPPER_H
-#define ASYNC_FRAMEWORK_MOVEWRAPPER_H
+#pragma once
 
 #include <utility>
 
@@ -32,5 +31,3 @@ namespace async_framework
         mutable T value_;
     };
 } // namespace async_framework
-
-#endif

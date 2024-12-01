@@ -1,5 +1,5 @@
-#ifndef ASYNC_FRAMEWORK_TRY_H
-#define ASYNC_FRAMEWORK_TRY_H
+#pragma once
+
 #include <cassert>
 #include <execution>
 #include <functional>
@@ -248,5 +248,3 @@ namespace async_framework
         }
     }
 } // namespace async_framework
-
-#endif

@@ -1,5 +1,4 @@
-#ifndef ASYNC_FRAMEWORK_SIMPLEEXECUTOR_H
-#define ASYNC_FRAMEWORK_SIMPLEEXECUTOR_H
+#pragma once
 
 #include <functional>
 #include "../Executor.h"
@@ -70,6 +69,18 @@ namespace async_framework
             bool checkin(Func func, Context ctx, ScheduleOptions opts) override
             {
                 int64_t id = reinterpret_cast<int64_t>(ctx);
+                auto prompt = pool_.getCurrentId() == (id & (~kContextMask)) && opts.prompt;
+                if (prompt)
+                {
+                    func();
+                    return true;
+                }
+                return pool_.scheduleById(std::move(func), id & (~kContextMask)) == util::ThreadPool::ERROR_TYPE::ERROR_NONE;
+            }
+
+            IOExecutor *getIOExecutor() override
+            {
+                return &ioExecutor_;
             }
 
         private:
@@ -78,5 +89,3 @@ namespace async_framework
         };
     } // namespace executors
 } // namespace async_framework
-
-#endif

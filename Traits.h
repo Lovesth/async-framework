@@ -1,5 +1,4 @@
-#ifndef ASYNC_FRAMEWORK_TRAITS_H
-#define ASYNC_FRAMEWORK_TRAITS_H
+#pragma once
 
 #include "Try.h"
 
@@ -49,5 +48,3 @@ namespace async_framework
     } // namespace detail
 
 } // namespace async_framework
-
-#endif

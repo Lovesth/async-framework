@@ -1,5 +1,4 @@
-#ifndef ASYNC_FRAMEWORK_COMMON_MACROS_H
-#define ASYNC_FRAMEWORK_COMMON_MACROS_H
+#pragma once
 
 #if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely)
 #define AS_LIKELY [[likely]]
@@ -39,6 +38,4 @@
 #define ELIDEABLE_AFTER_AWAIT [[ACC::elideable_after_await]]
 #else
 #define ELIDEABLE_AFTER_AWAIT
-#endif
-
 #endif

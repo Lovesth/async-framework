@@ -1,5 +1,4 @@
-#ifndef ASYNC_FRAMEWORK_IOEXECUTOR_H
-#define ASYNC_FRAMEWORK_IOEXECUTOR_H
+#pragma once
 
 #include <cstdint>
 #include <functional>
@@ -56,5 +55,3 @@ namespace async_framework
         virtual void submitIOV(int fd, iocb_cmd cmd, const iovec_t *iov, size_t count, __off_t offset, AIOCallback cbfn) = 0;
     };
 } // namespace async_framework
-
-#endif

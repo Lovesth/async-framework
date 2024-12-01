@@ -1,5 +1,4 @@
-#ifndef ASYNC_FRAMEWORK_SIMPLEIOEXECUTOR_H
-#define ASYNC_FRAMEWORK_SIMPLEIOEXECUTOR_H
+#pragma once
 
 #include "../IOExecutor.h"
 #include <thread>
@@ -139,5 +138,3 @@ namespace async_framework
         };
     } // namespace executors
 } // namespace async_framework
-
-#endif

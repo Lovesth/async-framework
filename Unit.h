@@ -1,5 +1,5 @@
-#ifndef ASYNC_FRAMEWORK_UNIT_H
-#define ASYNC_FRAMEWORK_UNIT_H
+#pragma once
+
 namespace async_framework
 {
     // 作为最基本的类型使用
@@ -16,5 +16,3 @@ namespace async_framework
         }
     };
 } // namespace async_framework
-
-#endif

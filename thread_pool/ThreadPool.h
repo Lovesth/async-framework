@@ -1,8 +1,7 @@
 /* A simple thread pool implementation
 */
+#pragma once
 
-#ifndef ASYNC_FRAMEWORK_THREADPOOL_H
-#define ASYNC_FRAMEWORK_THREADPOOL_H
 #include <atomic>
 #include <cassert>
 #include <functional>
@@ -194,5 +193,3 @@ namespace async_framework::util
         return res;
     }
 }
-
-#endif

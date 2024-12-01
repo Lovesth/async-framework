@@ -1,5 +1,4 @@
-#ifndef ASYNC_FRAMEWORK_COMMON_H
-#define ASYNC_FRAMEWORK_COMMON_H
+#pragma once
 
 #include <stdexcept>
 #include "CommonMacros.h"
@@ -13,5 +12,3 @@ namespace async_framework
         throw std::logic_error(errorMsg);
     }
 }
-
-#endif

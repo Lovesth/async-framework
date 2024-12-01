@@ -1,5 +1,4 @@
-#ifndef ASYNC_FRAMEWORK_EXECUTOR_H
-#define ASYNC_FRAMEWORK_EXECUTOR_H
+#pragma once
 
 #include <chrono>
 #include <cstdint>
@@ -244,5 +243,3 @@ namespace async_framework
         return Executor::TimeAwaitable(this, dur, schedule_info);
     }
 } // namespace async_frame work.
-
-#endif

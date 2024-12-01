@@ -10,7 +10,7 @@
 #include <vector>
 #include <cstdlib>
 #include <format>
-#include "../utility/Queue.h"
+#include "../util/Queue.h"
 
 namespace async_framework::util
 {

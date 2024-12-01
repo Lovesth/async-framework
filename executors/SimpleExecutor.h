@@ -3,7 +3,7 @@
 #include <functional>
 #include "../Executor.h"
 #include "SimpleIOExecutor.h"
-#include "../thread_pool/ThreadPool.h"
+#include "../util/ThreadPool.h"
 
 namespace async_framework
 {

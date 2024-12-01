@@ -1,141 +1,80 @@
 #ifndef ASYNC_FRAMEWORK_SIMPLEEXECUTOR_H
 #define ASYNC_FRAMEWORK_SIMPLEEXECUTOR_H
 
-#include "../IOExecutor.h"
-#include <thread>
-#include <libaio.h>
+#include <functional>
+#include "../Executor.h"
+#include "SimpleIOExecutor.h"
+#include "../thread_pool/ThreadPool.h"
 
 namespace async_framework
 {
     namespace executors
     {
-        // This is a demo IOExecutor.
-        // submitIO and submitIOV should be implemented
-        class SimpleIOExecutor : public IOExecutor
+        inline constexpr int64_t kContextMask = 0x40000000;
+
+        // This is a simple executor. The intention of SimpleExecutor is to make the
+        // test available and show how user should implement their executors. People who
+        // want to have fun with async_simple could use SimpleExecutor for convenience,
+        // too. People who want to use async_simple in production level development
+        // should implement their own executor strategy and implement an Executor
+        // derived from async_simple::Executor as an interface.
+        //
+        // The actual strategy that SimpleExecutor used is implemented in
+        // async_simple/util/ThreadPool.h.
+
+        // 这里的Schedule是使用线程池实现
+        class SimpleExecutor : public Executor
         {
         public:
-            static constexpr int KMaxAio = 8;
+            using Func = Executor::Func;
+            using Context = Executor::Context;
 
         public:
-            SimpleIOExecutor() {}
-            virtual ~SimpleIOExecutor() {}
-            SimpleIOExecutor(const IOExecutor &) = delete;
-            SimpleIOExecutor &operator=(const IOExecutor &) = delete;
-
-        public:
-            class Task
+            explicit SimpleExecutor(size_t threadNum) : pool_(threadNum)
             {
-            public:
-                Task(AIOCallback &func) : func_(func) {}
-                ~Task() {}
-
-            public:
-                void process(io_event_t &event) { func_(event); }
-
-            private:
-                AIOCallback func_;
-            };
-
-        public:
-            bool init()
-            {
-                auto r = io_setup(KMaxAio, &ioContext_);
-                if (r < 0)
-                {
-                    return false;
-                }
-                loopThread_ = std::thread([this]() mutable
-                                          { this->loop(); });
-                return true;
+                ioExecutor_.init();
             }
 
-            void destroy()
+            ~SimpleExecutor()
             {
-                shutdown_ = true;
-                if (loopThread_.joinable())
-                {
-                    loopThread_.join();
-                }
-                io_destroy(ioContext_);
-            }
-
-            void loop()
-            {
-                while (!shutdown_)
-                {
-                    io_event events[KMaxAio];
-                    struct timespec timeout = {0, 1000 * 300};
-                    auto n = io_getevents(ioContext_, 1, KMaxAio, events, &timeout);
-                    if (n < 0)
-                    {
-                        continue;
-                    }
-                    for (auto i = 0; i < n; i++)
-                    {
-                        auto task = reinterpret_cast<Task *>(events[i].data);
-                        io_event_t evt{events[i].data, events[i].obj, events[i].res, events[i].res2};
-                        task->process(evt);
-                        delete task;
-                    }
-                }
+                ioExecutor_.destroy();
             }
 
         public:
-            void submitIO([[maybe_unused]] int fd, [[maybe_unused]] iocb_cmd cmd, [[maybe_unused]] void *buffer, [[maybe_unused]] size_t length,
-                          [[maybe_unused]] off_t offset, [[maybe_unused]] AIOCallback cbfn) override
+            bool schedule(Func func) override
             {
-                iocb io;
-                memset(&io, 0, sizeof(iocb));
-                io.aio_fildes = fd;
-                io.aio_lio_opcode = cmd;
-                io.u.c.buf = buffer;
-                io.u.c.offset = offset;
-                io.u.c.nbytes = length;
-                io.data = new Task(cbfn);
-
-                struct iocb *iocbs[] = {&io};
-                auto r = io_submit(ioContext_, 1, iocbs);
-                if (r < 0)
-                {
-                    auto task = reinterpret_cast<Task *>(iocbs[0]->data);
-                    io_event_t event;
-                    event.res = r;
-                    task->process(event);
-                    delete task;
-                    return;
-                }
+                return pool_.scheduleById(std::move(func)) == util::ThreadPool::ERROR_TYPE::ERROR_NONE;
             }
 
-            void submitIOV([[maybe_unused]] int fd, [[maybe_unused]] iocb_cmd cmd, [[maybe_unused]] const iovec_t *iov,
-                           [[maybe_unused]] size_t count, [[maybe_unused]] off_t offset, [[maybe_unused]] AIOCallback cbfn) override
+            bool currentThreadInExecutor() const override
             {
-                iocb io;
-                memset(&io, 0, sizeof(iocb));
-                io.aio_fildes = fd;
-                io.aio_lio_opcode = cmd;
-                io.u.c.buf = (void *)iov;
-                io.u.c.offset = offset;
-                io.u.c.nbytes = count;
-                io.data = new Task(cbfn);
+                return pool_.getCurrentId() != -1;
+            }
 
-                struct iocb *iocbs[] = {&io};
+            ExecutorStat stat() const override
+            {
+                return ExecutorStat();
+            }
 
-                auto r = io_submit(ioContext_, 1, iocbs);
-                if (r < 0)
-                {
-                    auto task = reinterpret_cast<Task *>(iocbs[0]->data);
-                    io_event_t event;
-                    event.res = r;
-                    task->process(event);
-                    delete task;
-                    return;
-                }
+            size_t currentContextId() const override
+            {
+                return pool_.getCurrentId();
+            }
+
+            Context checkout() override
+            {
+                // avoid CurrentId equal to NULLCTX
+                return reinterpret_cast<Context>(pool_.getCurrentId() | kContextMask);
+            }
+
+            bool checkin(Func func, Context ctx, ScheduleOptions opts) override
+            {
+                int64_t id = reinterpret_cast<int64_t>(ctx);
             }
 
         private:
-            volatile bool shutdown_ = false;
-            io_context_t ioContext_ = 0;
-            std::thread loopThread_;
+            util::ThreadPool pool_;
+            SimpleIOExecutor ioExecutor_;
         };
     } // namespace executors
 } // namespace async_framework

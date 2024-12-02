@@ -72,7 +72,7 @@ namespace async_framework
             other.sharedState_ = nullptr;
         }
 
-        Future &operator(Future &&other)
+        Future &operator=(Future &&other)
         {
             if (this != &other)
             {

@@ -191,7 +191,7 @@ namespace async_framework
             std::mutex mtx;
             std::condition_variable cv;
             std::atomic<bool> done{false};
-
+            // must wait utill p has set the value
             sharedState_->setContinuation([&mtx, &cv, &done, p = std::move(promise)](Try<T> &t) mutable
                                           {
                 std::unique_lock<std::mutex> lock(mtx);

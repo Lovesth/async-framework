@@ -3,7 +3,7 @@
 #include <iterator>
 #include <vector>
 #include "Try.h"
-#include <future>
+#include "Future.h"
 
 namespace async_framework
 {
@@ -26,6 +26,61 @@ namespace async_framework
     //
     // Since the returned type is a future. So the user wants to get its value
     // could use `get()` method synchronously or `then*()` method asynchronously.
-    
+    template <std::input_iterator Iterator>
+    inline Future<std::vector<Try<typename std::iterator_traits<Iterator>::value_type::value_type>>>
+    collectAll(Iterator begin, Iterator end)
+    {
+        using T = typename std::iterator_traits<Iterator>::value_type::value_type;
+        size_t n = std::distance(begin, end);
+
+        bool allReady = true;
+        for (auto iter = begin; iter != end; ++iter)
+        {
+            if (!iter->hasResult())
+            {
+                allReady = false;
+                break;
+            }
+        }
+        // n个Iterator都有结果
+        if (allReady)
+        {
+            std::vector<Try<T>> results;
+            results.reserve(n);
+            for (auto iter = begin; iter != end; ++iter)
+            {
+                results.push_back(std::move(iter->results()));
+            }
+            return Future<std::vector<Try<T>>>(std::move(results));
+        }
+
+        Promise<std::vector<Try<T>>> promise;
+        auto future = promise.getFuture();
+        // 使用共享指针，回调，在析构函数里面setValue。
+        // 使用共享指针管理Context，只有所有features都设置了value, Context才会销毁，然后
+        // 在析构函数里面设置值。
+        struct Context
+        {
+            Context(size_t n, Promise<std::vector<Try<T>>> p_) : results(n), p(std::move(p_)) {}
+            ~Context() { p.setValue(std::move(results)); }
+            std::vector<Try<T>> results;
+            Promise<std::vector<Try<T>>> p;
+        };
+
+        auto ctx = std::make_shared<Context>(n, std::move(promise));
+        for (size_t i = 0; i < n; ++i, ++begin)
+        {
+            if (begin->hasResult())
+            {
+                ctx->results[i] = std::move(begin->result());
+            }
+            else
+            {
+                begin->setContinuation([ctx, i](Try<T> &&t) mutable
+                                       { ctx->results[i] = std::move(t); });
+            }
+        }
+        return future;
+    }
 
 } // namespace async_framework

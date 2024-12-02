@@ -17,7 +17,15 @@ namespace async_framework
     template <>
     // 只是一个声明，定义在下面
     class Try<void>;
-
+    // Try<T> contains either an instance of T, an exception, or nothing.
+    // Try<T>::value() will return the instance.
+    // If exception or nothing inside, Try<T>::value() would throw an exception.
+    //
+    // You can create a Try<T> by:
+    // 1. default constructor: contains nothing.
+    // 2. construct from exception_ptr.
+    // 3. construct from value T.
+    // 4. moved from another Try<T> instance.
     template <typename T>
     class Try
     {

@@ -222,13 +222,37 @@ namespace async_framework
         // parameter.
         //
         template <typename F, typename R = TryCallableResult<T, F>>
+        Future<typename R::ReturnsFuture::Inner> thenTry(F &&f) &&
+        {
+            return thenImpl<F, R>(std::forward<F>(f));
+        }
 
+        // Similary to thenTry, but F takes a T&&. If exception throws, F will not be called.
+        template <typename F, typename R = ValueCallableResult<T, F>>
+        Future<typename R::ReturnsFuture::Inner> thenValue(F &&f) &&
+        {
+            auto lambda = [func = std::forward<F>(f)](Try<T> &&t) mutable
+            {
+                if constexpr (std::is_void_v<T>)
+                {
+                    t.value();
+                    return std::forward<F>(func)();
+                }
+                else
+                {
+                    return std::forward<F>(func)(std::move(t).value());
+                }
+            };
+            using Func = decltype(lambda);
+            return thenImpl<Func, TryCallableResult<T, Func>>(std::move(lambda));
+        }
 
     public:
         // This section is public because they may invoked by other type of Future.
         // They are not suppose to be public.
         // FIXME: mark the section as private.
-        void setExecutor(Executor *ex)
+        void
+        setExecutor(Executor *ex)
         {
             if (sharedState_)
             {
@@ -303,7 +327,60 @@ namespace async_framework
 
         // continuation returns a future
         template <typename F, typename R>
-        Future<typename R::Return>
+        Future<typename R::ReturnsFuture::Inner> thenImpl(F &&func)
+        {
+            logicAssert(valid(), "Future is broken.");
+            using T2 = typename R::ReturnsFuture::Inner;
+
+            if (!sharedState_)
+            {
+                if constexpr (R::ReturnsFuture::value)
+                {
+                    try
+                    {
+                        auto newFuture = std::forward<F>(func)(std::move(localState_.getTry()));
+                        if (!newFuture.getExecutor())
+                        {
+                            newFuture.setExecutor(localState_.getExecutor());
+                        }
+                        return newFuture;
+                    }
+                    catch (...)
+                    {
+                        return Future<T2>(Try<T2>(std::current_exception()));
+                    }
+                }
+                else
+                {
+                    Future<T2> newFuture(makeTryCall(std::forward<F>(func), std::move(localState_.getTry())));
+                    newFuture.setExecutor(localState_.getExecutor());
+                    return newFuture;
+                }
+            }
+
+            Promise<T2> promise;
+            auto newFuture = promise.getFuture();
+            newFuture.setExecutor(sharedState_->getExecutor());
+            sharedState_->setContinuation([p = std::move(promise), f = std::forward<F>(func)](Try<T> &&t) mutable
+                                          {
+                if(!R::isTry && t.hasError()) {
+                    p.setException(t.getException());
+                }else{
+                    if constexpr (R::ReturnsFuture::value) {
+                        try {
+                            auto f2 = f(std::move(t));
+                            f2.setContinuation([pm=std::move(p)](Try<T2>&& t2) mutable {
+                                pm.setValue(std::move(t2));
+                            });
+                        }catch(...){
+                            p.setException(std::current_exception());
+                        }
+                    } else{
+                        p.setValue(makeTryCall(std::forward<F>(f), std::move(t)));
+                    }
+                } });
+            return newFuture;
+        }
 
     private:
         FutureState<inner_value_type> *sharedState_;
@@ -311,8 +388,34 @@ namespace async_framework
         LocalState<inner_value_type> localState_;
 
     private:
-        template <Iter>
+        template <typename Iter>
         friend Future<std::vector<Try<typename std::iterator_traits<Iter>::value_type::value_type>>>
         collectAll(Iter begin, Iter end);
     };
-}
+
+    // Make a ready Future
+    template <typename T>
+    Future<T> makeReadyFuture(T &&v)
+    {
+        return Future<T>(Try<T>(std::forward<T>(v)));
+    }
+
+    template <typename T>
+    Future<T> makeReadyFuture(Try<T> &&t)
+    {
+        return Future<T>(std::move(t));
+    }
+
+    template <typename T>
+    Future<T> makeReadyFuture(std::exception_ptr ex)
+    {
+        return Future<T>(Try<T>(ex));
+    }
+
+    template <typename T>
+    inline Future<void> makeReadyFuture()
+    {
+        return Future<void>(Try<Unit>(Unit()));
+    }
+
+} // namespace async_framework

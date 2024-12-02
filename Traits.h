@@ -30,6 +30,13 @@ namespace async_framework
     template <typename T, typename F>
     struct ValueCallableResult
     {
+        using Result = std::invoke_result_t<F, T&&>;
+        using ReturnsFuture = IsFuture<Result>;
+        static constexpr bool isTry = false;
+    };
+
+    template<typename F>
+    struct ValueCallableResult<void, F> {
         using Result = std::invoke_result_t<F>;
         using ReturnsFuture = IsFuture<Result>;
         static constexpr bool isTry = false;

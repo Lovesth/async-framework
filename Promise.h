@@ -99,7 +99,7 @@ namespace async_framework
         }
 
     public:
-        void setExecption(std::exception_ptr error)
+        void setException(std::exception_ptr error)
         {
             logicAssert(valid(), "Promise is broken");
             sharedState_->setResult(Try<value_type>(error));

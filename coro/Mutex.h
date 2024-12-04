@@ -77,6 +77,44 @@ namespace async_framework
             /// If there are other coroutines waiting to lock the mutex then this will
             /// schedule the resumption of the next coroutine in the queue.
 
+            void unlock() noexcept
+            {
+                assert(state_.load(std::memory_order_relaxed) != unlockedState());
+                auto *waitersHead = waiters_;
+                if (waitersHead == nullptr)
+                {
+                    void *currentState = state_.load(std::memory_order_relaxed);
+                    if (currentState == nullptr)
+                    {
+                        // Looks like there are no waiters waiting to acquire the lock.
+                        // Try to unlock it - use a compare-exchange to decide the race
+                        // between unlocking the mutex and another thread enqueueing
+                        // another waiter.
+                        const bool releasedLock = state_.compare_exchange_strong(currentState, unlockedState(), std::memory_order_release, std::memory_order_relaxed);
+                        if (releasedLock)
+                        {
+                            return;
+                        }
+                    }
+                    // There are some awaiters that have been newly queued.
+                    // Dequeue them and reverse their order from LIFO to FIFO.
+                    currentState = state_.exchange(nullptr, std::memory_order_acquire);
+                    assert(currentState != unlockedState());
+                    assert(currentState != nullptr);
+                    auto *waiter = static_cast<LockAwaiter *>(currentState);
+                    do
+                    {
+                        auto *temp = waiter->next_;
+                        waiter->next_ = waitersHead;
+                        waitersHead = waiter;
+                        waiter = temp;
+                    } while (waiter != nullptr);
+                }
+                assert(waitersHead != nullptr);
+                waiters_ = waitersHead->next_;
+                waitersHead->awaitingCoroutine_.resume();
+            }
+
         private:
             class LockAwaiter
             {
@@ -92,6 +130,8 @@ namespace async_framework
                 }
 
                 void await_resume() noexcept {}
+                // FIXME: LockAwaiter should implement coAwait to avoid to fall in
+                // ViaAsyncAwaiter.
 
             protected:
                 Mutex &mutex_;
@@ -145,7 +185,7 @@ namespace async_framework
                         // Try to queue this waiter to the list of waiters.
                         void *newValue = awaiter;
                         awaiter->next_ = static_cast<LockAwaiter *>(oldValue);
-                        if (state_.compare_exchange_weak(oldValue, newValue, std::memory_order_relaxed, std::memory_order_relaxed))
+                        if (state_.compare_exchange_weak(oldValue, newValue, std::memory_order_release, std::memory_order_relaxed))
                         {
                             return true;
                         }
@@ -165,5 +205,14 @@ namespace async_framework
             LockAwaiter *waiters_;
         };
 
+        inline Mutex::ScopedLockAwaiter Mutex::coScopedLock() noexcept
+        {
+            return ScopedLockAwaiter(*this);
+        }
+
+        inline Mutex::LockAwaiter Mutex::coLock() noexcept
+        {
+            return LockAwaiter(*this);
+        }
     } // namespace coro
 } // async_framework

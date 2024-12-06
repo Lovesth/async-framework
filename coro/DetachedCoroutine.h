@@ -4,7 +4,7 @@
 #include <exception>
 #include <coroutine>
 
-namespace async_simple
+namespace async_framework
 {
     namespace coro
     {

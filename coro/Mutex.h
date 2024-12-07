@@ -16,7 +16,7 @@ namespace async_framework
 
         public:
             // Construct a new async mutex that is initially unlocked.
-            Mutex() noexcept : state_(unlockedState()), waiters_(nullptr) {}
+            Mutex() noexcept : state_(unlockedState()), waiters_{nullptr} {}
 
             Mutex(const Mutex &) = delete;
             Mutex(Mutex &&) = delete;
@@ -25,6 +25,7 @@ namespace async_framework
 
             ~Mutex()
             {
+                // Check there are no waiters waiting to acquire the lock
                 assert(state_.load(std::memory_order_relaxed) == unlockedState() || state_.load(std::memory_order_relaxed) == nullptr);
                 assert(waiters_ == nullptr);
             }
@@ -76,7 +77,6 @@ namespace async_framework
             ///
             /// If there are other coroutines waiting to lock the mutex then this will
             /// schedule the resumption of the next coroutine in the queue.
-
             void unlock() noexcept
             {
                 assert(state_.load(std::memory_order_relaxed) != unlockedState());
@@ -120,9 +120,7 @@ namespace async_framework
             {
             public:
                 explicit LockAwaiter(Mutex &mutex) noexcept : mutex_(mutex) {}
-
                 bool await_ready() noexcept { return mutex_.tryLock(); }
-
                 bool await_suspend(std::coroutine_handle<> awaitingCoroutine) noexcept
                 {
                     awaitingCoroutine_ = awaitingCoroutine;
@@ -144,6 +142,7 @@ namespace async_framework
 
             class ScopedLockAwaiter : public LockAwaiter
             {
+            public:
                 using LockAwaiter::LockAwaiter;
                 [[nodiscard]] std::unique_lock<Mutex> await_resume() noexcept
                 {
@@ -151,7 +150,7 @@ namespace async_framework
                 }
             };
 
-            // Special value for state_ that indicates the mutex is not locked.
+            // Special value for _state that indicates the mutex is not locked.
             void *
             unlockedState() noexcept
             {
@@ -165,6 +164,7 @@ namespace async_framework
             // later once it acquires the mutex. Returns false if the lock was acquired
             // synchronously and the awaiting coroutine should continue without
             // suspending.
+
             bool lockAsyncImpl(LockAwaiter *awaiter)
             {
                 void *oldValue = state_.load(std::memory_order_relaxed);
@@ -172,10 +172,12 @@ namespace async_framework
                 {
                     if (oldValue == unlockedState())
                     {
+                        // It looks like the mutex is currently unlocked.
+                        // Try to acquire it synchronously.
                         void *newValue = nullptr;
-                        if (state_.compare_exchange_weak(oldValue, newValue, std::memory_order_acquire, std::memory_order_relaxed))
+                        if (state_.compare_exchange_strong(oldValue, newValue, std::memory_order_acquire, std::memory_order_relaxed))
                         {
-                            // Acquired synchronously, don't suspend
+                            // Acquired synchronously, don't stop.
                             return false;
                         }
                     }
@@ -185,7 +187,7 @@ namespace async_framework
                         // Try to queue this waiter to the list of waiters.
                         void *newValue = awaiter;
                         awaiter->next_ = static_cast<LockAwaiter *>(oldValue);
-                        if (state_.compare_exchange_weak(oldValue, newValue, std::memory_order_release, std::memory_order_relaxed))
+                        if (state_.compare_exchange_strong(oldValue, newValue, std::memory_order_acquire, std::memory_order_relaxed))
                         {
                             return true;
                         }

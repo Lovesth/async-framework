@@ -540,5 +540,11 @@ namespace async_framework
         // should implement `coAwait(Executor*)` member method. Then the caller would
         // pass its executor instance to the awaitable.
 
+        template <typename T>
+        concept isDerivedFromLazyLocal = std::is_base_of_v<LazyLocalBase, T> && requires(const T *base) {
+            std::is_same_v<decltype(T::classof(base)), bool>;
+        };
+
+        
     } // namespace coro
 } // namespace async_framework

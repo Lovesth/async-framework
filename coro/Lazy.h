@@ -545,6 +545,191 @@ namespace async_framework
             std::is_same_v<decltype(T::classof(base)), bool>;
         };
 
-        
+        template <typename T = void>
+        class [[nodiscard]] CORO_ONLY_DESTROY_WHEN_DONE ELIDEABLE_AFTER_AWAIT Lazy : public detail::LazyBase<T, /*reschedule=*/false>
+        {
+            using Base = detail::LazyBase<T, false>;
+            template <isDerivedFromLazyLocal LazyLocal>
+            static Lazy<T> setLazyLocalImpl(Lazy<T> self, LazyLocal local)
+            {
+                self.coro_.promise().lazy_local_ = &local;
+                co_return co_await std::move(self);
+            }
+
+            template <isDerivedFromLazyLocal LazyLocal>
+            static Lazy<T> setLazyLocalImpl(Lazy<T> self, std::unique_ptr<LazyLocal> base)
+            {
+                self.coro_.promise().lazy_local_ = base.get();
+                co_return co_await std::move(self);
+            }
+
+            template <isDerivedFromLazyLocal LazyLocal>
+            static Lazy<T> setLazyLocalImpl(Lazy<T> self, std::shared_ptr<LazyLocal> base)
+            {
+                self.coro_.promise().lazy_local_ = base.get();
+                co_return co_await std::move(self);
+            }
+
+        public:
+            using Base::Base;
+
+            // Bind an executor to a Lazy, and convert it to RescheduleLazy.
+            // You can only call via on rvalue, i.e. a Lazy is not accessible after
+            // via() was called.
+            RescheduleLazy<T> via(Executor *ex) &&
+            {
+                logicAssert(this->coro_.operator bool(), "Lazy do not have a coroutine_handle. May be the allocation failed or you're using a used Lazy");
+                this->coro_.promise().executor_ = ex;
+
+                return RescheduleLazy<T>(std::exchange(this->coro_, nullptr));
+            }
+
+            // Bind an executor only. Don't re-schedule.
+            //
+            // This function is deprecated, please use start(cb, ex) instead of setEx.
+            [[deprecated]] Lazy<T> setEx(Executor *ex) &&
+            {
+                logicAssert(this->coro_.operator bool(), "Lazy do not have a coroutine_handle. May be the allocation failed or you're using a used Lazy");
+                this->coro_.promise().executor_ = ex;
+                return Lazy<T>(std::exchange(this->coro_, nullptr));
+            }
+
+            template <isDerivedFromLazyLocal LazyLocal>
+            Lazy<T> setLazyLocal(std::unique_ptr<LazyLocal> base) &&
+            {
+                return setLazyLocalImpl(std::move(*this), std::move(base));
+            }
+
+            template <isDerivedFromLazyLocal LazyLocal>
+            Lazy<T> setLazyLocal(std::shared_ptr<LazyLocal> base) &&
+            {
+                return setLazyLocalImpl(std::move(*this), std::move(base));
+            }
+
+            template <isDerivedFromLazyLocal LazyLocal, typename... Args>
+            Lazy<T> setLazyLocal(Args &&...args) &&
+            {
+                logicAssert(this->coro_ operator bool(), "Lazy do not have a coroutine handle. Maybe the allocation failed or you're using a used Lazy");
+                if constexpr (std::is_move_constructible_v<LazyLocal>)
+                {
+                    return setLazyLocalImpl<LazyLocal>(std::move(*this), LazyLocal{std::forward<Args>(args)...});
+                }
+                else
+                {
+                    return setLazyLocalImpl<LazyLocal>(std::move(*this), std::make_unique<LazyLocal>(std::forward<Args>(args)...));
+                }
+            }
+
+            // Bind an executor and start coroutine without scheduling immediately.
+            template <typename F>
+            void directlyStart(F &&callback, Executor *executor)
+                requires(detail::isLazyCallback<T, F>)
+            {
+                this->coro_.promise().executor_ = executor;
+                return start(std::forward<F>(callback));
+            }
+
+            auto coAwait(Executor *ex)
+            {
+                logicAssert(this->coro_.operator bool(), "Lazy do not have a coroutine_handle. Maybe the allocation failed or you're using a used Lazy.");
+                // derived lazy inherits executor
+                this->coro_.promise().executor_ = ex;
+                return typename Base::ValueAwaiter(std::exchange(this->coro_, nullptr));
+            }
+
+        private:
+            friend class RescheduleLazy<T>;
+        };
+
+        // dispatch a lazy to executor, dont reschedule immediately
+
+        // A RescheduleLazy is a Lazy with an executor. The executor of a RescheduleLazy
+        // wouldn't/shouldn't be nullptr. So we needn't check it.
+        //
+        // The user couldn't/shouldn't declare a coroutine function whose return type is
+        // RescheduleLazy. The user should get a RescheduleLazy by a call to
+        // `Lazy::via(Executor)` only.
+        //
+        // Different from Lazy, when a RescheduleLazy is co_awaited/started/syncAwaited,
+        // the RescheduleLazy wouldn't be executed immediately. The RescheduleLazy would
+        // submit a task to resume the corresponding Lazy task to the executor. Then the
+        // executor would execute the Lazy task later.
+
+        template <typename T = void>
+        class [[nodiscard]] RescheduleLazy : public detail::LazyBase<T, /*reschedule=*/true>
+        {
+            using Base = detail::LazyBase<T, true>;
+
+        public:
+            void detach()
+            {
+                this->start([](auto &&t)
+                            {
+                    if(t.hasError()){
+                        std::rethrow_exception(t.getException());
+                    } });
+            }
+
+            [[deprecated("RescheduleLazy should be only allowed in DetachedCoroutine")]] auto
+            operator co_await()
+            {
+                return Base::operator co_await();
+            }
+
+        private:
+            using Base::Base;
+        };
+
+        template <typename T>
+        inline Lazy<T> detail::LazyPromise<T>::get_return_object() noexcept
+        {
+            return Lazy<T>(Lazy<T>::Handle::from_promise(*this));
+        }
+
+        inline Lazy<void> detail::LazyPromise<void>::get_return_object() noexcept
+        {
+            return Lazy<void>(Lazy<void>::Handle::from_promise(*this));
+        }
+
+        /// Why do we want to introduce `get_return_object_on_allocation_failure()`?
+        /// Since a coroutine will be roughly converted to:
+        ///
+        /// ```C++
+        /// void *frame_addr = ::operator new(required size);
+        /// __promise_ = new (frame_addr) __promise_type(...);
+        /// __return_object_ = __promise_.get_return_object();
+        /// co_await __promise_.initial_suspend();
+        /// try {
+        ///     function-body
+        /// } catch (...) {
+        ///     __promise_.unhandled_exception();
+        /// }
+        /// co_await __promise_.final_suspend();
+        /// ```
+        ///
+        /// Then we can find that the coroutine should be nounwind (noexcept) naturally
+        /// if the constructor of the promise_type, the get_return_object() function,
+        /// the initial_suspend, the unhandled_exception(), the final_suspend and the
+        /// allocation function is noexcept.
+        ///
+        /// For the specific coroutine type, Lazy, all the above except the allocation
+        /// function is noexcept. So that we can make every Lazy function noexcept
+        /// naturally if we make the allocation function nothrow. This is the reason why
+        /// we want to introduce `get_return_object_on_allocation_failure()` to Lazy.
+        ///
+        /// Note that the optimization may not work in some platforms due the ABI
+        /// limitations. Since they need to consider the case that the destructor of an
+        /// exception can throw exceptions.
+
+        template <typename T>
+        inline Lazy<T> detail::LazyPromise<T>::get_return_object_on_allocation_failure() noexcept
+        {
+            return Lazy<T>(typename Lazy<T>::Handle(nullptr));
+        }
+
+        inline Lazy<void> detail::LazyPromise<void>::get_return_object_on_allocation_failure() noexcept
+        {
+            return Lazy<void>(Lazy<void>::Handle(nullptr));
+        }
     } // namespace coro
 } // namespace async_framework

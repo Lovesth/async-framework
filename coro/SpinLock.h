@@ -59,9 +59,30 @@ namespace async_framework
                 locked_.store(false, std::memory_order_release);
             }
 
+            Lazy<std::unique_lock<SpinLock>> coScopedLock() noexcept
+            {
+                co_await coLock();
+                co_return std::unique_lock<SpinLock>{*this, std::adopt_lock};
+            }
+
         private:
             std::int32_t spinCount_;
             std::atomic<bool> locked_;
+        };
+
+        class ScopedSpinLock
+        {
+        public:
+            explicit ScopedSpinLock(SpinLock &lock) : lock_(lock) { lock_.lock(); }
+            ~ScopedSpinLock()
+            {
+                lock_.unlock();
+            }
+
+        private:
+            ScopedSpinLock(const ScopedSpinLock &) = delete;
+            ScopedSpinLock &operator=(const ScopedSpinLock &) = delete;
+            SpinLock &lock_;
         };
     } // namespace coro
 } // namespace async_framework

@@ -11,10 +11,10 @@
 
 namespace async_framework::util
 {
-    class condition : public std::binary_semaphore
+    class Condition : public std::binary_semaphore
     {
     public:
-        explicit condition(ptrdiff_t num = 0) : std::binary_semaphore(num) {}
+        explicit Condition(ptrdiff_t num = 0) : std::binary_semaphore(num) {}
     };
 }
 

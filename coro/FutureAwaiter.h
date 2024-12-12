@@ -39,11 +39,24 @@ namespace async_framework
 				} });
 			};
 
-			auto await_resume() {
+			auto await_resume()
+			{
 				return std::move(future_.value());
 			}
 		};
 	} // namespace detail
 
-	template 
+	template <typename T>
+	auto operator co_await(Future<T> &&future)
+	{
+		return coro::detail::FutureAwaiter<T>{std::move(future)};
+	}
+
+	template <typename T>
+	[[deprecated("Require an rvalue future")]]
+	auto operator co_await(T &&future)
+		requires IsFuture<std::decay_t<T>>::value
+	{
+		return std::move(operator co_await(std::move(future)));
+	}
 } // namespace async_framework

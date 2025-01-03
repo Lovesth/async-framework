@@ -47,7 +47,7 @@ template <typename client_t,
 class client_pool : public std::enable_shared_from_this<
                         client_pool<client_t, io_context_pool_t>> {
   using client_pools_t = client_pools<client_t, io_context_pool_t>;
-  static async_simple::coro::Lazy<void> collect_idle_timeout_client(
+  static async_framework::coro::Lazy<void> collect_idle_timeout_client(
       std::weak_ptr<client_pool> self_weak,
       coro_io::detail::client_queue<std::unique_ptr<client_t>>& clients,
       std::chrono::milliseconds sleep_time, std::size_t clear_cnt) {
@@ -72,7 +72,7 @@ class client_pool : public std::enable_shared_from_this<
                    << "}, now client cnt: " << clients.size();
         if (is_all_cleared != 0) [[unlikely]] {
           try {
-            co_await async_simple::coro::Yield{};
+            co_await async_framework::coro::Yield{};
           } catch (std::exception& e) {
             ELOG_ERROR << "unexcepted yield exception: " << e.what();
           }
@@ -98,7 +98,7 @@ class client_pool : public std::enable_shared_from_this<
     return std::chrono::milliseconds{static_cast<long>(e(r) * ms.count())};
   }
 
-  static async_simple::coro::Lazy<std::pair<bool, std::chrono::milliseconds>>
+  static async_framework::coro::Lazy<std::pair<bool, std::chrono::milliseconds>>
   reconnect_impl(std::unique_ptr<client_t>& client,
                  std::shared_ptr<client_pool>& self) {
     auto pre_time_point = std::chrono::steady_clock::now();
@@ -113,7 +113,7 @@ class client_pool : public std::enable_shared_from_this<
     co_return std::pair{ok, cost_time};
   }
 
-  static async_simple::coro::Lazy<void> reconnect(
+  static async_framework::coro::Lazy<void> reconnect(
       std::unique_ptr<client_t>& client, std::weak_ptr<client_pool> watcher) {
     using namespace std::chrono_literals;
     std::shared_ptr<client_pool> self = watcher.lock();
@@ -147,7 +147,7 @@ class client_pool : public std::enable_shared_from_this<
     client = nullptr;
   }
 
-  static async_simple::coro::Lazy<void> alive_detect(
+  static async_framework::coro::Lazy<void> alive_detect(
       const typename client_t::config& client_config,
       std::weak_ptr<client_pool> watcher) {
     std::shared_ptr<client_pool> self = watcher.lock();
@@ -205,7 +205,7 @@ class client_pool : public std::enable_shared_from_this<
     }
   }
 
-  async_simple::coro::Lazy<std::unique_ptr<client_t>> get_client(
+  async_framework::coro::Lazy<std::unique_ptr<client_t>> get_client(
       const typename client_t::config& client_config) {
     std::unique_ptr<client_t> client;
     free_clients_.try_dequeue(client);
@@ -277,7 +277,7 @@ class client_pool : public std::enable_shared_from_this<
     using type = void;
   };
   template <typename T>
-  struct lazy_hacker<async_simple::coro::Lazy<T>> {
+  struct lazy_hacker<async_framework::coro::Lazy<T>> {
     using type = T;
   };
   template <typename T>
@@ -334,7 +334,7 @@ class client_pool : public std::enable_shared_from_this<
         free_clients_(pool_config.max_connection){};
 
   template <typename T>
-  async_simple::coro::Lazy<return_type<T>> send_request(
+  async_framework::coro::Lazy<return_type<T>> send_request(
       T op, typename client_t::config& client_config) {
     // return type: Lazy<expected<T::returnType,std::errc>>
     ELOG_TRACE << "try send request to " << host_name_;
@@ -393,7 +393,7 @@ class client_pool : public std::enable_shared_from_this<
   friend class load_blancer;
 
   template <typename T>
-  async_simple::coro::Lazy<return_type_with_host<T>> send_request(
+  async_framework::coro::Lazy<return_type_with_host<T>> send_request(
       T op, std::string_view endpoint,
       typename client_t::config& client_config) {
     // return type: Lazy<expected<T::returnType,std::errc>>
@@ -427,7 +427,7 @@ class client_pool : public std::enable_shared_from_this<
   coro_io::detail::client_queue<std::unique_ptr<client_t>>
       short_connect_clients_;
   client_pools_t* pools_manager_ = nullptr;
-  async_simple::Promise<async_simple::Unit> idle_timeout_waiter;
+  async_framework::Promise<async_framework::Unit> idle_timeout_waiter;
   std::string host_name_;
   pool_config pool_config_;
   io_context_pool_t& io_context_pool_;

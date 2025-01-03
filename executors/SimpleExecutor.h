@@ -13,13 +13,13 @@ namespace async_framework
 
         // This is a simple executor. The intention of SimpleExecutor is to make the
         // test available and show how user should implement their executors. People who
-        // want to have fun with async_simple could use SimpleExecutor for convenience,
-        // too. People who want to use async_simple in production level development
+        // want to have fun with async_framework could use SimpleExecutor for convenience,
+        // too. People who want to use async_framework in production level development
         // should implement their own executor strategy and implement an Executor
-        // derived from async_simple::Executor as an interface.
+        // derived from async_framework::Executor as an interface.
         //
         // The actual strategy that SimpleExecutor used is implemented in
-        // async_simple/util/ThreadPool.h.
+        // async_framework/util/ThreadPool.h.
 
         // 这里的Schedule是使用线程池实现
         class SimpleExecutor : public Executor

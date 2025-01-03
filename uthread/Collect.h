@@ -21,7 +21,7 @@
  *
  * `F` is a C++ lambda function, the type of returned value `value `is
  * `std::vector<T>`, `T` is the return type of `F`. If `T` is `void`,
- * `collectAll` would return `async_simple::Unit`.
+ * `collectAll` would return `async_framework::Unit`.
  */
 
 #pragma once

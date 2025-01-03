@@ -155,7 +155,7 @@ namespace async_framework
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-alignof-expression"
                 static_assert(alignof(T) <= alignof(std::max_align_t),
-                              "async_simple doesn't allow Lazy with over aligned object");
+                              "async_framework doesn't allow Lazy with over aligned object");
 #endif
                 LazyPromise() noexcept {}
                 ~LazyPromise() noexcept {}
@@ -502,11 +502,11 @@ namespace async_framework
         // Lazy::start().
         //
         // If the user wants to get the value synchronously, he could use
-        // async_simple::coro::syncAwait.
+        // async_framework::coro::syncAwait.
         //
         // ```C++
         // void foo_use2() {
-        //     auto val = async_simple::coro::syncAwait(foo());
+        //     auto val = async_framework::coro::syncAwait(foo());
         //     std::cout << "foo: " << val << "\n";
         // }
         // ```

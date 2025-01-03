@@ -444,5 +444,148 @@ namespace coro_io
     {
         return async_framework::coro::collectAll(select_impl(args)...);
     }
+    template <typename T, typename Callback>
+    inline auto select(std::vector<T> vec, Callback callback)
+    {
+        if constexpr (coro_io::is_lazy_v<Callback>)
+        {
+            std::vector<async_framework::Executor *> executors;
+            for (auto &lazy : vec)
+            {
+                executors.push_back(lazy.getExecutor());
+            }
 
+            return async_framework::coro::collectAny(
+                std::move(vec),
+                [executors, callback = std::move(callback)](size_t index, auto &&val)
+                {
+                    auto executor = executors[index];
+                    if (executor)
+                    {
+                        callback(index, std::move(val)).via(executor).start([](auto &&) {});
+                    }
+                    else
+                    {
+                        callback(index, std::move(val)).start([](auto &&) {});
+                    }
+                });
+        }
+        else
+        {
+            return async_framework::coro::collectAny(std::move(vec), std::move(callback));
+        }
+    }
+
+    template <typename Socket, typename AsioBuffer>
+    std::pair<asio::error_code, size_t> read_some(Socket &sock,
+                                                  AsioBuffer &&buffer)
+    {
+        asio::error_code error;
+        size_t length = sock.read_some(std::forward<AsioBuffer>(buffer), error);
+        return std::make_pair(error, length);
+    }
+
+    template <typename Socket, typename AsioBuffer>
+    std::pair<asio::error_code, size_t> read(Socket &sock, AsioBuffer &&buffer)
+    {
+        asio::error_code error;
+        size_t length = asio::read(sock, buffer, error);
+        return std::make_pair(error, length);
+    }
+
+    template <typename Socket, typename AsioBuffer>
+    std::pair<asio::error_code, size_t> write(Socket &sock, AsioBuffer &&buffer)
+    {
+        asio::error_code error;
+        auto length = asio::write(sock, std::forward<AsioBuffer>(buffer), error);
+        return std::make_pair(error, length);
+    }
+
+    inline std::error_code accept(asio::ip::tcp::acceptor &a,
+                                  asio::ip::tcp::socket &socket)
+    {
+        std::error_code error;
+        a.accept(socket, error);
+        return error;
+    }
+
+    template <typename executor_t>
+    inline std::error_code connect(executor_t &executor,
+                                   asio::ip::tcp::socket &socket,
+                                   const std::string &host,
+                                   const std::string &port)
+    {
+        asio::ip::tcp::resolver resolver(executor);
+        std::error_code error;
+        auto endpoints = resolver.resolve(host, port, error);
+        if (error)
+        {
+            return error;
+        }
+        asio::connect(socket, endpoints, error);
+        return error;
+    }
+
+#ifdef __linux__
+    // this help us ignore SIGPIPE when send data to a unexpected closed socket.
+    inline auto pipe_signal_handler = []
+    {
+        std::signal(SIGPIPE, SIG_IGN);
+        return 0;
+    }();
+
+    // FIXME: this function may not thread-safe if it not running in socket's
+    // executor
+    inline async_framework::coro::Lazy<std::pair<std::error_code, std::size_t>>
+    async_sendfile(asio::ip::tcp::socket &socket, int fd, off_t offset,
+                   size_t size) noexcept
+    {
+        std::error_code ec;
+        std::size_t least_bytes = size;
+        if (!ec) [[likely]]
+        {
+            if (!socket.native_non_blocking())
+            {
+                socket.native_non_blocking(true, ec);
+                if (ec)
+                {
+                    co_return std::pair{ec, 0};
+                }
+            }
+            while (true)
+            {
+                // Try the system call.
+                errno = 0;
+                ssize_t n = ::sendfile(socket.native_handle(), fd, &offset,
+                                       std::min(std::size_t{65536}, least_bytes));
+                ec = asio::error_code(n < 0 ? errno : 0,
+                                      asio::error::get_system_category());
+                least_bytes -= ec ? 0 : n;
+                // total_bytes_transferred += ec ? 0 : n;
+                // Retry operation immediately if interrupted by signal.
+                if (ec == asio::error::interrupted) [[unlikely]]
+                    continue;
+                // Check if we need to run the operation again.
+                if (ec == asio::error::would_block || ec == asio::error::try_again)
+                    [[unlikely]]
+                {
+                    callback_awaitor<std::error_code> non_block_awaitor;
+                    // We have to wait for the socket to become ready again.
+                    ec = co_await non_block_awaitor.await_resume([&](auto handler)
+                                                                 { socket.async_wait(asio::ip::tcp::socket::wait_write,
+                                                                                     [handler](const auto &ec)
+                                                                                     {
+                                                                                         handler.set_value_then_resume(ec);
+                                                                                     }); });
+                }
+                if (ec || n == 0 || least_bytes == 0) [[unlikely]]
+                { // End of File
+                    break;
+                }
+                // Loop around to try calling sendfile again.
+            }
+        }
+        co_return std::pair{ec, size - least_bytes};
+    }
+#endif
 } // namespace coro_io

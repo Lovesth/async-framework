@@ -45,44 +45,18 @@ void IoContext::run() {
         for (int i = 0; i < nfds; ++i) {
             auto sock = static_cast<Socket *>(eventPool_[i].data.ptr);
             const auto events = eventPool_[i].events;
-            async_simple::coro::ScopedSpinLock Lock(sock->coro_lock_);
+            sock->waited_events_ = events;
             // 隐式监听
-            if (events & (EPOLLERR | EPOLLHUP)) {
+            if (events & EPOLLERR ) {
+                std::cout << "Error happened" << std::endl;
                 // 出错或者关闭，交给上层处理错误
-                sock->recv_event_ = events;
-                sock->send_event_ = events;
-                if (auto h = std::exchange(sock->coro_recv_, nullptr); h) {
-                    executor_->schedule([h] { h.resume(); });
-                }
-                if (auto h = std::exchange(sock->coro_send_, nullptr); h) {
-                    executor_->schedule([h] { h.resume(); });
-                }
+                ::close(sock->fd_);
+                sock->fd_ = -1;
+                executor_->schedule(sock->h_);
                 continue;
             }
-
-            if (events & EPOLLRDHUP) {
-                auto h = std::exchange(sock->coro_recv_, nullptr);
-                sock->recv_event_ = events;
-                if (h) {
-                    executor_->schedule([h] { h.resume(); });
-                }
-            }
-
-            if (events & EPOLLIN) {
-                auto h = std::exchange(sock->coro_recv_, nullptr);
-                sock->recv_event_ = events;
-                if (h) {
-                    executor_->schedule([h] { h.resume(); });
-                }
-            }
-
-            if (events & EPOLLOUT) {
-                auto h = std::exchange(sock->coro_send_, nullptr);
-                sock->send_event_ = events;
-                if (h) {
-                    executor_->schedule([h] { h.resume(); });
-                }
-            }
+            epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, sock->fd_, nullptr);
+            executor_->schedule(sock->h_);
         }
     }
 }

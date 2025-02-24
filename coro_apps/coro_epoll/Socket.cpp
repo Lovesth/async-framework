@@ -13,11 +13,6 @@ Socket::Socket(int domain, int type, int protocol, IoContext *io_context, uint32
         std::cerr << "Error creating socket" << std::endl;
         exit(-1);
     }
-    if (!addEvents(listen_events_) || !attach2IoContext()) {
-        std::cerr << "Error attached to io_context" << std::endl;
-        exit(-1);
-    }
-
 }
 Socket::Socket(int fd, IoContext *io_context, uint32_t listen_events)
     : fd_(fd), io_context_(io_context), listen_events_(listen_events) {
@@ -34,10 +29,6 @@ Socket::Socket(int fd, IoContext *io_context, uint32_t listen_events)
         std::cerr << "Error set NOBLOCK" << std::endl;
         exit(-1);
     }
-    if (!addEvents(listen_events_) || !attach2IoContext()) {
-        std::cerr << "Error attached to io_context" << std::endl;
-        exit(-1);
-    }
 }
 Socket::~Socket() {
     if (fd_ != -1) {
@@ -50,6 +41,7 @@ bool Socket::attach2IoContext() {
         return false;
     const int epoll_fd = io_context_->epoll_fd_;
     epoll_event event{};
+    async_simple::coro::ScopedSpinLock Lock(io_state_lock_);
     event.events = listen_events_;
     event.data.ptr = this;
     const int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd_, &event);
